@@ -1,4 +1,4 @@
-﻿# tasks.py
+# tasks.py
 # Основной файл для приложения Tasks - планировщик задач
 # Версия: 1.1 (с Firebase клиентской интеграцией)
 # Автор: Grok 4 (на основе плана пользователя)
@@ -35,55 +35,115 @@ firebaseConfig = {
 firebase = pyrebase.initialize_app(firebaseConfig)
 auth = firebase.auth()
 db = firebase.database()
+
 class TasksApp:
     def __init__(self, root):
         print("→ Инициализация приложения начата")
+        
         self.root = root
         self.root.title("Tasks - Планировщик задач")
         self.root.geometry("800x600")
-        pygame.mixer.init()  # Инициализируем здесь, чтобы избежать проблем позже
+        
+        pygame.mixer.init()
         self.style = ttk.Style()
         self.style.theme_use('clam')
-        self.FONT_SMALL = ('Helvetica', 10)
+        
+        # Шрифты
+        self.FONT_SMALL  = ('Helvetica', 10)
         self.FONT_MEDIUM = ('Helvetica', 12)
-        self.FONT_LARGE = ('Helvetica', 14)
-        self.BG_COLOR = '#2E2E2E'
-        self.TEXT_COLOR = '#FFFFFF'
-        self.BUTTON_COLOR = '#6A1B9A'
-        self.ACTIVE_BUTTON_COLOR = '#AB47BC'
-        self.BORDER_COLOR = '#424242'
-        self.GREEN_BUTTON = '#4CAF50'
+        self.FONT_LARGE  = ('Helvetica', 14)
+        
+        # Темы
+        self.themes = {
+            "Default": {
+                "name": "Default (тёмный комфортный)",
+                "BG_COLOR": "#111827",
+                "TEXT_COLOR": "#f1f5f9",
+                "BUTTON_COLOR": "#6366f1",
+                "ACTIVE_BUTTON_COLOR": "#818cf8",
+                "BORDER_COLOR": "#1e293b",
+                "GREEN_BUTTON": "#10b981"
+            },
+            "Forest Mist": {
+                "name": "Forest Mist (зелёный уют)",
+                "BG_COLOR": "#0f1e17",
+                "TEXT_COLOR": "#d1fae5",
+                "BUTTON_COLOR": "#4ade80",
+                "ACTIVE_BUTTON_COLOR": "#86efac",
+                "BORDER_COLOR": "#14532d",
+                "GREEN_BUTTON": "#059669"
+            },
+            "Lavender Dusk": {
+                "name": "Lavender Dusk (фиолетовый вечер)",
+                "BG_COLOR": "#1e1b2e",
+                "TEXT_COLOR": "#ede9fe",
+                "BUTTON_COLOR": "#a78bfa",
+                "ACTIVE_BUTTON_COLOR": "#c4b5fd",
+                "BORDER_COLOR": "#312e4a",
+                "GREEN_BUTTON": "#34d399"
+            }
+        }
+        
+        # Переменные настроек
+        self.theme_var     = tk.StringVar(value="Default")
+        self.text_size_var = tk.StringVar(value="Средний")
+        self.lang_var      = tk.StringVar(value="Русский")
+        
+        # Автоматический переводчик (Google Translate)
+        from deep_translator import GoogleTranslator
+        self.translator = GoogleTranslator(source='ru', target='ru')  # по умолчанию русский
+        
+        # Создаём фреймы ДО темы
         self.sidebar_frame = tk.Frame(
             self.root,
-            bg=self.BG_COLOR,
             width=200,
             bd=2,
             relief='solid',
-            highlightbackground=self.BORDER_COLOR,
             highlightthickness=2
         )
         self.sidebar_frame.pack(side=tk.LEFT, fill=tk.Y)
-        self.content_frame = tk.Frame(self.root, bg=self.BG_COLOR)
+        
+        self.content_frame = tk.Frame(self.root)
         self.content_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Состояние
         self.current_section = tk.StringVar(value="Login")
-        self.theme_var = tk.StringVar(value="Тёмная")
-        self.text_size_var = tk.StringVar(value="Средний")
-        self.lang_var = tk.StringVar(value="Русский")
         self.user = None
         self.user_token = None
         self.tasks = []
         self.next_task_id = 1
         self.custom_types = ["Основная", "Дополнительная", "Необязательная"]
         self.bin = []
-        # Для обновлений (ДОБАВЛЕНО, чтобы избежать ошибки)
-        self.version = "1.1"
-        self.update_url = "https://raw.githubusercontent.com/your-repo/version.txt"  # ← Замените на реальный URL
-        self.exe_url = "https://raw.githubusercontent.com/your-repo/download/{new_version}.exe"  # ← Замените на реальный URL
+        
+        # Применяем начальную тему
+        self.apply_theme()
         self.configure_styles()
+        
+        # Показываем логин
         self.show_login()
+        
+        # Поток напоминаний
         self.reminder_thread = threading.Thread(target=self.check_reminders_loop, daemon=True)
         self.reminder_thread.start()
+        
         print("→ Инициализация приложения завершена")
+    
+    def _(self, text):
+        """Переводит строку на текущий язык"""
+        lang = self.lang_var.get()
+        if lang == "Русский":
+            return text
+        
+        target = {'Қазақша': 'kk', 'English': 'en'}.get(lang, 'ru')
+        self.translator.target = target
+        
+        try:
+            translated = self.translator.translate(text)
+            return translated if translated else text
+        except Exception as e:
+            print(f"Ошибка перевода '{text}': {e}")
+            return text
+
 
     def configure_styles(self):
         print("→ Конфигурация стилей")
@@ -151,13 +211,16 @@ class TasksApp:
             return
         uid = self.user['localId']
         token = self.user_token
+    
         try:
             print(f"Загрузка для uid: {uid}")
             print("Токен:", token[:20] + "...")
+        
             # custom_types
             types_data = db.child("users").child(uid).child("custom_types").get(token).val()
             print("custom_types из DB:", types_data)
             self.custom_types = types_data if types_data else ["Основная", "Дополнительная", "Необязательная"]
+        
             # tasks
             tasks_data = db.child("users").child(uid).child("tasks").get(token).val()
             print("tasks_data из DB:", tasks_data)
@@ -185,6 +248,7 @@ class TasksApp:
                         max_id = max(max_id, task["id"])
                     except Exception as inner_e:
                         print(f"Ошибка парсинга задачи {str_id}: {inner_e}")
+        
             # bin
             bin_data = db.child("users").child(uid).child("bin").get(token).val()
             print("bin_data из DB:", bin_data)
@@ -209,23 +273,29 @@ class TasksApp:
                         self.bin.append(task)
                     except Exception as inner_e:
                         print(f"Ошибка парсинга bin {str_id}: {inner_e}")
+        
             # next_task_id
             next_id = db.child("users").child(uid).child("next_task_id").get(token).val()
             self.next_task_id = next_id if next_id is not None else max_id + 1
+        
             # settings — загружаем и применяем
             settings_data = db.child("users").child(uid).child("settings").get(token).val()
             print("settings_data из DB:", settings_data)
+    
             if settings_data:
                 if "theme" in settings_data:
                     self.theme_var.set(settings_data["theme"])
+                    self.apply_theme()
                 if "text_size" in settings_data:
                     self.text_size_var.set(settings_data["text_size"])
-                if "language" in settings_data:
-                    self.lang_var.set(settings_data["language"])
-        except Exception as e:
-            messagebox.showerror("Ошибка загрузки", str(e))
-            print("Ошибка загрузки:", str(e))
+                    self.apply_text_size()
+            
+                self.lang_var.set("Русский")
+                # self.refresh_current_screen()   # ← если метод уже добавлен, оставь; иначе закомментируй пока
 
+        except Exception as e:  # ← вот этот блок добавляем
+            print("Ошибка загрузки данных из Firebase:", str(e))
+            messagebox.showerror("Ошибка загрузки", f"Не удалось загрузить данные:\n{str(e)}")
     def save_data_to_db(self):
         if not self.user:
             return
@@ -632,161 +702,178 @@ class TasksApp:
             task_to_edit = next((t for t in self.tasks if t["id"] == task_id), None)
             if not task_to_edit:
                 return
+
         form = tk.Toplevel(self.root)
-        form.title("Напоминание")
-        form.geometry("500x520")
+        form.title("Напоминание для задачи")
+        form.geometry("520x480")           # уменьшили высоту, т.к. нет секции звука
         form.configure(bg=self.BG_COLOR)
         form.transient(self.root)
         form.grab_set()
         form.resizable(True, True)
-        padx = 30
+
+        padx = 35
+        pady = 12
+
         # Заголовок задачи
         ttk.Label(
             form,
             text=f"Задача: {task_to_edit['name']}",
-            style='TLabel',
-            font=self.FONT_MEDIUM
-        ).pack(anchor='w', padx=padx, pady=(25, 10))
-        # ───────────── Дата ─────────────
+            font=self.FONT_MEDIUM,
+            wraplength=450
+        ).pack(anchor='w', padx=padx, pady=(25, 15))
+
+                # Дата
         tk.Label(
             form,
-            text="Дата (ддммгггг или дд.мм.гггг):",
+            text="Дата (дд.мм.гггг):",
             bg=self.BG_COLOR, fg=self.TEXT_COLOR,
             font=self.FONT_MEDIUM
         ).pack(anchor='w', padx=padx, pady=(5, 2))
+        
         date_entry = ttk.Entry(form, font=self.FONT_MEDIUM)
-        date_entry.pack(padx=padx, fill=tk.X, ipady=4)
+        date_entry.pack(padx=padx, fill=tk.X, ipady=5)
+        date_entry.configure(foreground=self.TEXT_COLOR, background='#2d3748')  # тёмно-серый фон + белый текст
         today_str = datetime.date.today().strftime("%d.%m.%Y")
         date_entry.insert(0, task_to_edit.get("reminder_date", today_str))
-        # ───────────── Время (с секундами опционально) ─────────────
+
+        # Время
         tk.Label(
             form,
-            text="Время (ччмм или ччммсс):",
+            text="Время (чч:мм:сс):",
             bg=self.BG_COLOR, fg=self.TEXT_COLOR,
             font=self.FONT_MEDIUM
         ).pack(anchor='w', padx=padx, pady=(20, 2))
-        time_entry = ttk.Entry(form, font=self.FONT_MEDIUM, width=12)
-        time_entry.pack(padx=padx, fill=tk.X, ipady=4)
-        placeholder = "ччммсс"
+        
+        time_entry = ttk.Entry(form, font=self.FONT_MEDIUM)
+        time_entry.pack(padx=padx, fill=tk.X, ipady=5)
+        time_entry.configure(foreground=self.TEXT_COLOR, background='#2d3748')  # тот же фон
+
+        placeholder = "например: 14:30:00"
         time_entry.insert(0, placeholder)
-        time_entry.config(foreground='grey')
+        time_entry.config(foreground='#9ca3af')  # серый для placeholder
+
         def on_time_focus_in(e):
             if time_entry.get() == placeholder:
                 time_entry.delete(0, tk.END)
                 time_entry.config(foreground=self.TEXT_COLOR)
+
+        def on_time_focus_out(e):
+            if not time_entry.get().strip():
+                time_entry.insert(0, placeholder)
+                time_entry.config(foreground='#9ca3af')
+
+        time_entry.bind("<FocusIn>", on_time_focus_in)
+        time_entry.bind("<FocusOut>", on_time_focus_out)
+
+        saved_time = task_to_edit.get("reminder_time", "")
+        if saved_time:
+            time_entry.delete(0, tk.END)
+            time_entry.insert(0, saved_time)
+            time_entry.config(foreground=self.TEXT_COLOR)
+
+        def on_time_focus_in(e):
+            if time_entry.get() == placeholder:
+                time_entry.delete(0, tk.END)
+                time_entry.config(foreground=self.TEXT_COLOR)
+
         def on_time_focus_out(e):
             if not time_entry.get().strip():
                 time_entry.insert(0, placeholder)
                 time_entry.config(foreground='grey')
+
         time_entry.bind("<FocusIn>", on_time_focus_in)
         time_entry.bind("<FocusOut>", on_time_focus_out)
+
         saved_time = task_to_edit.get("reminder_time", "")
         if saved_time:
             time_entry.delete(0, tk.END)
-            time_entry.insert(0, saved_time.replace(":", ""))
+            time_entry.insert(0, saved_time)
             time_entry.config(foreground=self.TEXT_COLOR)
-        # ───────────── Звук ─────────────
-        tk.Label(
-            form,
-            text="Звук напоминания:",
-            bg=self.BG_COLOR, fg=self.TEXT_COLOR,
-            font=self.FONT_MEDIUM
-        ).pack(anchor='w', padx=padx, pady=(25, 5))
-        sound_var = tk.StringVar(value=task_to_edit.get("reminder_sound", "По умолчанию"))
-        sound_combo = ttk.Combobox(
-            form,
-            textvariable=sound_var,
-            values=["По умолчанию", "Системный", "Пользовательский"],
-            font=self.FONT_MEDIUM,
-            state="readonly",
-            width=25
-        )
-        sound_combo.pack(padx=padx, fill=tk.X, ipady=3)
-        # Пользовательский звук
-        custom_frame = tk.Frame(form, bg=self.BG_COLOR)
-        custom_path_entry = ttk.Entry(custom_frame, font=self.FONT_SMALL)
-        custom_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
-        choose_btn = ttk.Button(
-            custom_frame,
-            text="Выбрать файл",
-            command=lambda: self.choose_sound_file(custom_path_entry)
-        )
-        choose_btn.pack(side=tk.RIGHT)
-        def on_sound_change(*args):
-            if sound_var.get() == "Пользовательский":
-                custom_frame.pack(fill=tk.X, padx=padx, pady=(10, 0))
-                custom_path_entry.delete(0, tk.END)
-                custom_path_entry.insert(0, task_to_edit.get("custom_sound_path", ""))
-            else:
-                custom_frame.pack_forget()
-        sound_var.trace("w", on_sound_change)
-        on_sound_change() # инициализация
-        # ───────────── Кнопки ─────────────
+
+        # Кнопки
         btn_frame = tk.Frame(form, bg=self.BG_COLOR)
-        btn_frame.pack(pady=35)
+        btn_frame.pack(pady=40, fill=tk.X)
+
         def normalize_date(s: str) -> str:
             s = ''.join(c for c in s if c.isdigit())
             if len(s) == 6:
-                s = s[:4] + "20" + s[4:] # 010225 → 01022025
+                s = s[:4] + "20" + s[4:]
             if len(s) == 8:
                 return f"{s[:2]}.{s[2:4]}.{s[4:]}"
-            return s # оставляем как есть, если не 6/8 цифр
+            return s
+
         def normalize_time(s: str) -> str:
             s = ''.join(c for c in s if c.isdigit())
-            if len(s) == 3:
-                s = "0" + s + "00"
-            elif len(s) == 4:
+            if len(s) == 4:
                 s += "00"
             elif len(s) == 5:
-                s = s[:4] + "0" + s[4]
+                s = s[:4] + "0" + s[4:]
             if len(s) == 6:
                 return f"{s[:2]}:{s[2:4]}:{s[4:]}"
             return ""
+
         def save_reminder():
             date_raw = date_entry.get().strip()
             time_raw = time_entry.get().strip()
-            if not date_raw or not time_raw or time_raw in (placeholder, "ччммсс", ""):
-                messagebox.showwarning("Ошибка", "Укажите дату и время напоминания.")
+
+            if not date_raw:
+                messagebox.showwarning("Ошибка", "Укажите дату напоминания.")
+                date_entry.focus()
                 return
-            # Нормализация
+
+            if not time_raw or time_raw == placeholder:
+                messagebox.showwarning("Ошибка", "Укажите время напоминания.")
+                time_entry.focus()
+                return
+
             date_norm = normalize_date(date_raw)
             time_norm = normalize_time(time_raw)
-            if not time_norm:
-                messagebox.showerror("Неверный формат", "Время должно быть 4 или 6 цифр (ччмм или ччммсс)")
-                return
-            # Проверка формата после нормализации
+
             if not re.match(r"^\d{2}\.\d{2}\.\d{4}$", date_norm):
-                messagebox.showerror("Неверный формат", "Дата должна быть в формате дд.мм.гггг")
+                messagebox.showerror("Формат", "Дата должна быть в виде дд.мм.гггг")
                 return
+
             if not re.match(r"^\d{2}:\d{2}:\d{2}$", time_norm):
-                messagebox.showerror("Неверный формат", "Время должно быть в формате чч:мм:сс")
+                messagebox.showerror("Формат", "Время должно быть в виде чч:мм:сс")
                 return
-            # Проверка валидности даты и времени
+
             try:
                 dt = datetime.datetime.strptime(f"{date_norm} {time_norm}", "%d.%m.%Y %H:%M:%S")
                 if dt < datetime.datetime.now():
-                    if not messagebox.askyesno("Прошлое время", "Напоминание установлено в прошлом.\nСохранить всё равно?"):
+                    if not messagebox.askyesno("Прошлое время", "Напоминание в прошлом.\nСохранить?"):
                         return
             except ValueError:
-                messagebox.showerror("Ошибка", "Некорректная дата или время (например, 31.04 или 25:00)")
+                messagebox.showerror("Ошибка", "Некорректная дата или время")
                 return
-            # Сохраняем нормализованные значения
+
+            # Сохранение (звук больше не сохраняем)
             task_to_edit["reminder_date"] = date_norm
             task_to_edit["reminder_time"] = time_norm
-            task_to_edit["reminder_sound"] = sound_var.get()
-            if sound_var.get() == "Пользовательский":
-                path = custom_path_entry.get().strip()
-                if not path or not os.path.exists(path):
-                    messagebox.showwarning("Звук", "Укажите существующий звуковой файл.")
-                    return
-                task_to_edit["custom_sound_path"] = path
-            else:
-                task_to_edit.pop("custom_sound_path", None)
-            task_to_edit.pop("last_trigger", None) # сбрасываем при установке
+            task_to_edit.pop("reminder_sound", None)
+            task_to_edit.pop("custom_sound_path", None)
+            task_to_edit.pop("last_trigger", None)
+
             self.refresh_reminders_table()
             form.destroy()
-            messagebox.showinfo("Готово", "Напоминание сохранено.")
-            self.save_data_to_db() # Сохранение после установки напоминания
+            messagebox.showinfo("Успех", "Напоминание сохранено.")
+            self.save_data_to_db()
+
+        save_btn = ttk.Button(
+            btn_frame,
+            text="Сохранить",
+            style='Add.TButton',
+            command=save_reminder
+        )
+        save_btn.pack(side=tk.LEFT, padx=20)
+
+        cancel_btn = ttk.Button(
+            btn_frame,
+            text="Отмена",
+            command=form.destroy
+        )
+        cancel_btn.pack(side=tk.LEFT, padx=10)
+
+        date_entry.focus()
    
     def choose_sound_file(self, entry):
         file = filedialog.askopenfilename(
@@ -829,7 +916,8 @@ class TasksApp:
     def _trigger_reminder(self, task):
         msg = f"НАПОМИНАНИЕ\n\n{task['name']}\n{task.get('desc', '')[:120]}..."
         self.root.after(0, lambda m=msg: messagebox.showinfo("Напоминание", m))
-        # Системное уведомление (если plyer есть)
+
+        # Системное уведомление (если plyer установлен)
         if notification is not None:
             try:
                 notification.notify(
@@ -839,7 +927,19 @@ class TasksApp:
                     timeout=12
                 )
             except Exception as e:
-                print("Ошибка системного уведомления:", e)
+                print("Ошибка уведомления:", e)
+
+        # Только системный звук — самый простой и надёжный вариант
+        try:
+            winsound.MessageBeep()  # классический Windows beep
+            # Альтернативы (если хочешь поэкспериментировать):
+            # winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+            # winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+        except Exception as e:
+            print("Не удалось проиграть звук:", e)
+
+        self.save_data_to_db()
+
         # Звук
         sound_type = task.get("reminder_sound", "По умолчанию")
         try:
@@ -931,53 +1031,38 @@ class TasksApp:
         theme_combo = ttk.Combobox(
             theme_frame,
             textvariable=self.theme_var,
-            values=["Тёмная", "Светлая"],
+            values=["Default", "Forest Mist", "Lavender Dusk"],   # или ["Default", "Forest", "Lavender"]
             state="readonly",
             font=self.FONT_MEDIUM,
-            width=15
+            width=25
         )
         theme_combo.pack(side=tk.LEFT, padx=10)
         theme_combo.bind("<<ComboboxSelected>>", self.apply_theme)
-        # Раздел "Звук по умолчанию"
+        
+        # Раздел "Звук" — теперь только информационный текст
         sound_frame = tk.Frame(content_frame, bg=self.BG_COLOR)
         sound_frame.pack(fill=tk.X, pady=15)
-        ttk.Label(sound_frame, text="Звук по умолчанию:", style='TLabel').pack(side=tk.LEFT, padx=10)
-        self.default_sound_var = tk.StringVar(value="По умолчанию")
-        sound_combo = ttk.Combobox(
+        ttk.Label(
             sound_frame,
-            textvariable=self.default_sound_var,
-            values=["По умолчанию", "Системный", "Пользовательский"],
-            state="readonly",
-            font=self.FONT_MEDIUM,
-            width=20
-        )
-        sound_combo.pack(side=tk.LEFT, padx=10)
-        self.custom_default_sound_frame = tk.Frame(sound_frame, bg=self.BG_COLOR)
-        self.custom_default_path = ttk.Entry(self.custom_default_sound_frame, font=self.FONT_SMALL, width=40)
-        self.custom_default_path.pack(side=tk.LEFT, padx=5)
-        ttk.Button(self.custom_default_sound_frame, text="Выбрать", command=self.choose_default_sound).pack(side=tk.LEFT)
-        def toggle_custom_sound(*args):
-            if self.default_sound_var.get() == "Пользовательский":
-                self.custom_default_sound_frame.pack(fill=tk.X, pady=5)
-            else:
-                self.custom_default_sound_frame.pack_forget()
-        self.default_sound_var.trace("w", toggle_custom_sound)
-        toggle_custom_sound()
+            text="Звук напоминаний: всегда системный (Windows beep)",
+            style='TLabel'
+        ).pack(side=tk.LEFT, padx=10)
+
         # Раздел "Язык"
         lang_frame = tk.Frame(content_frame, bg=self.BG_COLOR)
         lang_frame.pack(fill=tk.X, pady=15)
+
         ttk.Label(lang_frame, text="Язык:", style='TLabel').pack(side=tk.LEFT, padx=10)
+
         lang_combo = ttk.Combobox(
             lang_frame,
             textvariable=self.lang_var,
-            values=["Русский", "Қазақша", "English"],
+            values=["Русский (другие языки — в разработке)"],
             state="readonly",
             font=self.FONT_MEDIUM,
-            width=15
+            width=35
         )
-        lang_combo.pack(side=tk.LEFT, padx=10)
-        lang_combo.bind("<<ComboboxSelected>>", self.apply_language)
-        # Кнопка сохранения
+        lang_combo.pack(side=tk.LEFT, padx=10)        # Кнопка сохранения
         save_btn = ttk.Button(content_frame, text="Сохранить настройки", style='Add.TButton', command=self.save_settings)
         save_btn.pack(pady=40)
 
@@ -993,19 +1078,21 @@ class TasksApp:
     def apply_text_size(self, event=None):
         size = self.text_size_var.get()
         if size == "Маленький":
-            self.FONT_SMALL = ('Helvetica', 9)
+            self.FONT_SMALL  = ('Helvetica', 9)
             self.FONT_MEDIUM = ('Helvetica', 10)
-            self.FONT_LARGE = ('Helvetica', 11)
+            self.FONT_LARGE  = ('Helvetica', 11)
         elif size == "Большой":
-            self.FONT_SMALL = ('Helvetica', 12)
+            self.FONT_SMALL  = ('Helvetica', 12)
             self.FONT_MEDIUM = ('Helvetica', 14)
-            self.FONT_LARGE = ('Helvetica', 16)
-        else: # Средний
-            self.FONT_SMALL = ('Helvetica', 10)
+            self.FONT_LARGE  = ('Helvetica', 16)
+        else:  # Средний
+            self.FONT_SMALL  = ('Helvetica', 10)
             self.FONT_MEDIUM = ('Helvetica', 12)
-            self.FONT_LARGE = ('Helvetica', 14)
+            self.FONT_LARGE  = ('Helvetica', 14)
+
         self.configure_styles()
-        # Перерисовываем текущий раздел, чтобы изменения применились
+
+        # Перерисовка текущего раздела
         current = self.current_section.get()
         if current == "Настройки":
             self.show_settings()
@@ -1017,32 +1104,31 @@ class TasksApp:
             self.show_reminders()
         elif current == "О программе":
             self.show_about()
-        self.save_data_to_db() # Сохранение после изменения
+
+        self.save_data_to_db()
 
     def apply_theme(self, event=None):
-        print("→ apply_theme вызван") # для отладки, потом можно убрать
-        theme = self.theme_var.get()
-        if theme == "Светлая":
-            self.BG_COLOR = '#F5F5F5'
-            self.TEXT_COLOR = '#000000'
-            self.BUTTON_COLOR = '#FFD700'
-            self.ACTIVE_BUTTON_COLOR = '#FFA500'
-            self.BORDER_COLOR = '#D3D3D3'
-            self.GREEN_BUTTON = '#32CD32'
-        else: # Тёмная
-            self.BG_COLOR = '#2E2E2E'
-            self.TEXT_COLOR = '#FFFFFF'
-            self.BUTTON_COLOR = '#6A1B9A'
-            self.ACTIVE_BUTTON_COLOR = '#AB47BC'
-            self.BORDER_COLOR = '#424242'
-            self.GREEN_BUTTON = '#4CAF50'
-       
+        theme_name = self.theme_var.get()
+        theme = self.themes.get(theme_name, self.themes["Default"])
+
+        self.BG_COLOR = theme["BG_COLOR"]
+        self.TEXT_COLOR = theme["TEXT_COLOR"]
+        self.BUTTON_COLOR       = theme["BUTTON_COLOR"]
+        self.ACTIVE_BUTTON_COLOR = theme["ACTIVE_BUTTON_COLOR"]
+        self.BORDER_COLOR       = theme["BORDER_COLOR"]
+        self.GREEN_BUTTON       = theme["GREEN_BUTTON"]
+
         self.root.configure(bg=self.BG_COLOR)
-        self.sidebar_frame.configure(bg=self.BG_COLOR, highlightbackground=self.BORDER_COLOR)
-        self.content_frame.configure(bg=self.BG_COLOR)
+
+        if hasattr(self, 'sidebar_frame') and self.sidebar_frame.winfo_exists():
+            self.sidebar_frame.configure(bg=self.BG_COLOR, highlightbackground=theme["BORDER_COLOR"])
+
+        if hasattr(self, 'content_frame') and self.content_frame.winfo_exists():
+            self.content_frame.configure(bg=self.BG_COLOR)
+
         self.configure_styles()
-       
-        # Перерисовываем текущий экран
+
+        # Перерисовка текущего экрана
         current = self.current_section.get()
         if current == "Настройки":
             self.show_settings()
@@ -1054,13 +1140,90 @@ class TasksApp:
             self.show_reminders()
         elif current == "О программе":
             self.show_about()
-       
-        # self.save_data_to_db() # можно закомментировать, если сохраняет слишком часто
+
+        # self.save_data_to_db()   # можно раскомментировать, если нужно сохранять сразу
+
+    def refresh_current_screen(self):
+        """Перерисовывает текущий открытый раздел"""
+        current = self.current_section.get()
+        
+        if current == "Login":
+            self.show_login()
+        elif current == "Welcome":
+            self.show_welcome()
+        elif current == "Задачи":
+            self.show_tasks()
+        elif current == "Корзина":
+            self.show_bin()
+        elif current == "Напоминания":
+            self.show_reminders()
+        elif current == "Настройки":
+            self.show_settings()
+        elif current == "О программе":
+            self.show_about()
 
     def apply_language(self, event=None):
         lang = self.lang_var.get()
-        messagebox.showinfo("Язык", f"Язык изменён на {lang}. Для полного применения перезапустите приложение.")
-        self.save_data_to_db() # Сохранение после изменения
+        self.save_data_to_db()
+
+        messagebox.showinfo(
+            "Язык изменён",
+            f"Язык теперь: {lang}\n\n"
+            "Изменения вступят в силу после перезапуска приложения.\n"
+            "Пожалуйста, закройте и откройте программу заново."
+        )
+
+        self.root.update()
+        time.sleep(1.5)
+
+        import sys
+        import os
+        import subprocess
+        import platform
+
+        try:
+            # Определяем, как запускать заново
+            python_executable = sys.executable
+            if not os.path.isfile(python_executable):
+                python_executable = "python"  # fallback
+
+            script_path = os.path.abspath(sys.argv[0])
+            args = [python_executable] + sys.argv
+
+            current_os = platform.system()
+
+            if current_os == "Windows":
+                # Windows: detach + new process group
+                subprocess.Popen(
+                    args,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                # Linux / macOS: просто Popen + close_fds
+                # (можно добавить nohup, но обычно достаточно)
+                subprocess.Popen(
+                    args,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True,          # эквивалент setsid
+                    close_fds=True
+                )
+
+            print("Перезапуск запущен:", " ".join(args))
+            self.root.quit()
+
+        except Exception as e:
+            messagebox.showerror(
+                "Ошибка перезапуска",
+                f"Не удалось автоматически перезапустить приложение.\n\n"
+                f"Ошибка: {e}\n\n"
+                "Пожалуйста, закройте программу и откройте заново вручную."
+            )
+            print("Ошибка перезапуска:", e)
 
     def save_settings(self):
         messagebox.showinfo("Настройки", "Настройки сохранены.\nИзменения размера текста и темы применяются сразу.")
@@ -1077,7 +1240,7 @@ class TasksApp:
         desc_text = (
             "Tasks - это удобный планировщик задач для повседневного использования.\n"
             "Версия: 1.1\n"
-            "Подпись: @Temirlan\n and Создано с помощью Grok от xAI"
+            "Подпись: @Temirlan and Создано с помощью Grok от xAI\n"
             "Приложение позволяет управлять задачами, устанавливать напоминания и многое другое."
         )
         desc_label = ttk.Label(self.content_frame, text=desc_text, style='TLabel', justify=tk.CENTER, wraplength=500)
